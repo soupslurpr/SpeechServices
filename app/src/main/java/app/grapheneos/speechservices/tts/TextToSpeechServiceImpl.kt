@@ -91,10 +91,16 @@ fun isLanguageAvailableWithDefaultVoiceName(
 
     verboseLog(TAG) { "isLanguageAvailableWithDefaultVoiceName converted parameters: lang: $lang, country: $country, variant: $variant" }
 
+    val defaultVoiceEntries = DefaultVoice.entries.map { Pair<Int?, Voice?>(null, it.voice) }
     val best =
-        DefaultVoice.entries.map { Pair<Int?, Voice?>(null, it.voice) }.reduce { best, candidate ->
+        defaultVoiceEntries.fold(
+            Pair<Int?, Voice?>(
+                TextToSpeech.LANG_NOT_SUPPORTED,
+                null
+            )
+        ) { best, candidate ->
             val bestVoice = best.second
-            val candidateVoice = best.second
+            val candidateVoice = candidate.second
             val bestLocale = bestVoice?.locale
             val candidateLocale = candidateVoice?.locale
 
