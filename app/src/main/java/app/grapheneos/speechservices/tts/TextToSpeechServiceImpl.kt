@@ -21,7 +21,9 @@ import app.grapheneos.speechservices.g2p.fallback_network.FallbackNetwork
 import app.grapheneos.speechservices.g2p.fallback_network.G2PTokenizer
 import app.grapheneos.speechservices.g2p.fallback_network.G2PTokenizerConfig
 import app.grapheneos.speechservices.verboseLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -65,7 +67,7 @@ val supportedVoices = DefaultVoice.entries.map { it.voice } + listOf()
 
 val availableVoices = supportedVoices
 
-fun getAvailableVoiceByName(voiceName: String?): Voice? {
+fun getAvailableVoiceByName(voiceName: String): Voice? {
     return availableVoices.find { availableVoice -> availableVoice.name == voiceName }
 }
 
@@ -73,7 +75,7 @@ fun isVoiceAvailable(voice: Voice?): Boolean {
     return availableVoices.find { availableVoice -> availableVoice == voice } != null
 }
 
-fun isVoiceAvailable(voiceName: String?): Boolean {
+fun isVoiceAvailable(voiceName: String): Boolean {
     return getAvailableVoiceByName(voiceName) != null
 }
 
@@ -139,19 +141,31 @@ fun isLanguageAvailableWithDefaultVoiceName(
 
 class TextToSpeechServiceImpl : TextToSpeechService() {
 
+    /** The [Voice] that is in the process of being loaded. This is set to null when no voice is
+     * loaded, or when loading is finished or cancelled. */
+    private var loadingVoice: Voice? = null
+
+    /** The [Voice] that is currently fully loaded. This is set to null when no voice is loaded or a new
+     * [Voice] is in the process of being loaded. */
+    private var loadedVoice: Voice? = null
+
     private val loadVoiceMutex = Mutex()
 
     private var loadVoiceJob: Job? = null
 
+    private val loadVoiceInBackgroundMutex = Mutex()
+
+    private var loadVoiceInBackgroundJob: Job? = null
+
     private var synthesizeTextJob: Job? = null
 
-    private lateinit var encoder: Encoder
+    private var encoder: Encoder? = null
 
-    private lateinit var decoder: Decoder
+    private var decoder: Decoder? = null
 
     private val symbolTokenizer: SymbolTokenizer by lazy { SymbolTokenizer() }
 
-    private lateinit var englishPhonemizer: EnglishPhonemizer
+    private var englishPhonemizer: EnglishPhonemizer? = null
 
     private fun loadG2PTokenizerConfig(): G2PTokenizerConfig {
         resources.openRawResource(R.raw.g2p_config).bufferedReader().use { bufferedReader ->
@@ -170,23 +184,27 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
     }
 
     override fun onIsValidVoiceName(voiceName: String?): Int {
-        return if (isVoiceAvailable(voiceName)) {
+        return if (voiceName != null && isVoiceAvailable(voiceName)) {
             TextToSpeech.SUCCESS
         } else {
             TextToSpeech.ERROR
         }
     }
 
-    private suspend fun loadVoice(voiceName: String?) {
+    private suspend fun loadVoice(voiceName: String) {
         Log.d(TAG, "loadVoice parameters: voiceName: $voiceName")
-
-        if (!isVoiceAvailable(voiceName)) {
-            return
-        }
 
         lateinit var currentJob: Job
 
         loadVoiceMutex.withLock {
+            val voice = getAvailableVoiceByName(voiceName)
+            if (voice == null || loadedVoice == voice) {
+                return
+            } else if (loadingVoice == voice) {
+                loadVoiceJob?.join()
+                return
+            }
+
             val prevJob = loadVoiceJob
             if (prevJob != null && !prevJob.isCompleted) {
                 verboseLog(TAG) { "cancelling previous loadVoiceJob" }
@@ -195,30 +213,32 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                 loadVoiceJob = null
             }
 
-            currentJob = CoroutineScope(Dispatchers.IO).launch {
-                ensureActive()
-                val totalLoadingTime = SystemClock.elapsedRealtime()
-                if (!::encoder.isInitialized) {
+            currentJob = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.LAZY) {
+                val prevLoadedVoice = loadedVoice
+                loadedVoice = null
+                loadingVoice = voice
+                var newEncoder: Encoder? = null
+                var newDecoder: Decoder? = null
+                var newEnglishPhonemizer: EnglishPhonemizer? = null
+                try {
+                    ensureActive()
+                    val totalLoadingTime = SystemClock.elapsedRealtime()
                     val encoderTime = SystemClock.elapsedRealtime()
-                    encoder = resources.openRawResourceFd(R.raw.encoder).use {
+                    newEncoder = resources.openRawResourceFd(R.raw.encoder).use {
                         Encoder(it)
                     }
                     verboseLog(TAG) {
                         "encoder loading time: ${SystemClock.elapsedRealtime() - encoderTime}"
                     }
-                }
-                ensureActive()
-                if (!::decoder.isInitialized) {
+                    ensureActive()
                     val decoderTime = SystemClock.elapsedRealtime()
-                    decoder = resources.openRawResourceFd(R.raw.decoder).use {
+                    newDecoder = resources.openRawResourceFd(R.raw.decoder).use {
                         Decoder(it)
                     }
                     verboseLog(TAG) {
                         "decoder loading time: ${SystemClock.elapsedRealtime() - decoderTime}"
                     }
-                }
-                ensureActive()
-                if (!::englishPhonemizer.isInitialized) {
+                    ensureActive()
                     val lexiconTime = SystemClock.elapsedRealtime()
                     val lexicon = Lexicon(
                         false,
@@ -247,7 +267,7 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                         "fallbackNetwork total loading time: ${SystemClock.elapsedRealtime() - fallbackNetworkTime}"
                     }
                     val englishPhonemizerTime = SystemClock.elapsedRealtime()
-                    englishPhonemizer = EnglishPhonemizer(
+                    newEnglishPhonemizer = EnglishPhonemizer(
                         lexicon,
                         "ˌʌnnˈOn", // "unknown"
                         resources.openRawResource(R.raw.opennlp_en_ud_ewt_tokens__1_3__2_5_4).use {
@@ -261,24 +281,72 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                     verboseLog(TAG) {
                         "englishPhonemizer loading time: ${SystemClock.elapsedRealtime() - englishPhonemizerTime}"
                     }
+                    Log.d(
+                        TAG,
+                        "total voice loading time: ${SystemClock.elapsedRealtime() - totalLoadingTime}"
+                    )
+                } catch (e: CancellationException) {
+                    loadingVoice = null
+                    loadedVoice = prevLoadedVoice
+                    newEncoder?.close()
+                    newDecoder?.close()
+                    newEnglishPhonemizer?.close()
+                    throw e
                 }
-                Log.d(
-                    TAG,
-                    "total voice loading time: ${SystemClock.elapsedRealtime() - totalLoadingTime}"
-                )
+                loadedVoice = loadingVoice
+                loadingVoice = null
+                // TODO: If we support more languages, we should probably cache previously used
+                //  models to avoid constant loading and unloading of them when frequently
+                //  switching between languages so that delay is minimized.
+                encoder?.close()
+                decoder?.close()
+                englishPhonemizer?.close()
+                encoder = newEncoder
+                decoder = newDecoder
+                englishPhonemizer = newEnglishPhonemizer
             }
             loadVoiceJob = currentJob
+            currentJob.start()
         }
 
         currentJob.join()
     }
 
-    override fun onLoadVoice(voiceName: String?): Int {
-        // This makes sense because onLoadVoice is called only on the synthesis thread, so synthesis
-        // won't be interfered with.
-        runBlocking {
-            loadVoice(voiceName)
+    private suspend fun loadVoiceInBackground(voiceName: String) {
+        Log.d(TAG, "loadVoiceInBackground parameters: voiceName: $voiceName")
+
+        loadVoiceInBackgroundMutex.withLock {
+            if (loadedVoice?.name == voiceName || loadingVoice?.name == voiceName) {
+                return
+            }
+
+            val prevJob = loadVoiceInBackgroundJob
+            if (prevJob != null && !prevJob.isCompleted) {
+                verboseLog(TAG) { "cancelling previous loadVoiceInBackgroundJob" }
+                prevJob.cancelAndJoin()
+                verboseLog(TAG) { "cancelled previous loadVoiceInBackgroundJob" }
+                loadVoiceInBackgroundJob = null
+            }
+
+            loadVoiceInBackgroundJob = CoroutineScope(Dispatchers.IO).launch {
+                // If synthesizing, wait until it's finished to avoid cancelling synthesis.
+                synthesizeTextJob?.join()
+                loadVoice(voiceName)
+            }
         }
+    }
+
+    override fun onLoadVoice(voiceName: String?): Int {
+        Log.d(TAG, "onLoadVoice parameters: voiceName: $voiceName")
+
+        if (voiceName == null) {
+            return TextToSpeech.ERROR
+        }
+
+        runBlocking {
+            loadVoiceInBackground(voiceName)
+        }
+
         return TextToSpeech.SUCCESS
     }
 
@@ -316,15 +384,12 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                 return languageAvailability
             }
         }
+        if (defaultVoiceName == null) {
+            return languageAvailability
+        }
 
-        // TODO: Rethink this part, it results in multiple requests building up. Probably make a job
-        //  specific to onLoadLanguage to ensure only 1 instance at a time, and still wait until
-        //  synthesis is finished before calling loadVoice().
-        // Load the voice in the background.
-        CoroutineScope(Dispatchers.IO).launch {
-            // If synthesizing, wait until it's finished to avoid cancelling synthesis.
-            synthesizeTextJob?.join()
-            loadVoice(defaultVoiceName)
+        runBlocking {
+            loadVoiceInBackground(defaultVoiceName)
         }
 
         return languageAvailability
@@ -362,7 +427,7 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                 synthesizeTextJob = null
             }
 
-            currentJob = CoroutineScope(Dispatchers.IO).launch {
+            currentJob = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.LAZY) {
                 try {
                     if (request == null || callback == null) {
                         Log.d(TAG, "request or callback was null")
@@ -373,16 +438,25 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                     var timeToFirstAudio: Long? = null
                     val startTime = SystemClock.elapsedRealtime()
 
-                    val requestVoice =
-                        getAvailableVoiceByName(request.voiceName) ?: getAvailableVoiceByName(
-                            isLanguageAvailableWithDefaultVoiceName(
-                                request.language,
-                                request.country,
-                                request.variant
-                            ).second
-                        )
+                    val requestVoice = getAvailableVoiceByName(request.voiceName)
+                        ?: isLanguageAvailableWithDefaultVoiceName(
+                            request.language,
+                            request.country,
+                            request.variant
+                        ).second?.let { voiceName -> getAvailableVoiceByName(voiceName) }
                     if (requestVoice != null) {
                         loadVoice(requestVoice.name)
+                        val encoder = encoder
+                        val decoder = decoder
+                        val englishPhonemizer = englishPhonemizer
+                        if (encoder == null || decoder == null || englishPhonemizer == null) {
+                            Log.e(
+                                TAG,
+                                "onSynthesizeText: Voice not loaded after calling loadVoice with an available Voice!"
+                            )
+                            callback.error(TextToSpeech.ERROR_SERVICE)
+                            return@launch
+                        }
 
                         callback.start(
                             22050,
@@ -636,6 +710,7 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                 }
             }
             synthesizeTextJob = currentJob
+            currentJob.start()
         }
 
         runBlocking {
@@ -644,14 +719,6 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
     }
 
     override fun onStop() {
-        loadVoiceJob?.let { job ->
-            if (!job.isCompleted) {
-                verboseLog(TAG) { "onStop: calling cancel on loadLanguageJob" }
-                job.cancel()
-                verboseLog(TAG) { "onStop: called cancel on loadLanguageJob" }
-                loadVoiceJob = null
-            }
-        }
         synthesizeTextJob?.let { job ->
             if (!job.isCompleted) {
                 verboseLog(TAG) { "onStop: calling cancel on synthesizeTextJob" }
@@ -664,7 +731,8 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        encoder.close()
-        decoder.close()
+        encoder?.close()
+        decoder?.close()
+        englishPhonemizer?.close()
     }
 }

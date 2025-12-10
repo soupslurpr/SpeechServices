@@ -19,12 +19,12 @@ class GetSampleTextActivity : Activity() {
             country,
             variant
         )
-        val defaultVoice = getAvailableVoiceByName(defaultVoiceName)
         val isAvailable = when (isAvailableLanguage) {
             TextToSpeech.LANG_AVAILABLE, TextToSpeech.LANG_COUNTRY_AVAILABLE, TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE -> true
             TextToSpeech.LANG_NOT_SUPPORTED, TextToSpeech.LANG_MISSING_DATA -> false
             else -> false
         }
+        val defaultVoice = defaultVoiceName?.let { getAvailableVoiceByName(it) }
 
         val result = Intent()
         if (isAvailable) {
