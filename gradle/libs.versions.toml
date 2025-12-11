@@ -10,6 +10,7 @@ onnxruntimeAndroid = "1.23.2"
 media3CommonKtx = "1.8.0"
 openNlp = "2.5.6.1"
 icu4j = "78.1"
+slf4j = "2.0.17"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -25,6 +26,7 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
 androidx-media3-common-ktx = { group = "androidx.media3", name = "media3-common-ktx", version.ref = "media3CommonKtx" }
 apache-opennlp-tools = { group = "org.apache.opennlp", name = "opennlp-tools", version.ref = "openNlp" }
+slf4j-nop = { group = "org.slf4j", name = "slf4j-nop", version.ref = "slf4j" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 icu4j = { group = "com.ibm.icu", name = "icu4j", version.ref = "icu4j" }
 

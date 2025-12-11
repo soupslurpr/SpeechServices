@@ -106,7 +106,7 @@ dependencies {
     implementation(libs.onnxruntime.android)
     implementation(libs.androidx.media3.common.ktx)
 //    implementation(libs.apache.opennlp.tools)
-    implementation("org.slf4j:slf4j-nop:2.0.17")
+    implementation(libs.slf4j.nop)
     // TODO: Remove and use the official build once OpenNLP 2.5.7 is released with the fix for Android.
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation(libs.kotlinx.serialization.json)
