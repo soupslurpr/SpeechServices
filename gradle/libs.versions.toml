@@ -8,7 +8,7 @@ activityCompose = "1.12.1"
 composeBom = "2025.12.00"
 onnxruntimeAndroid = "1.23.2"
 media3CommonKtx = "1.8.0"
-openNlp = "2.5.6.1"
+openNlp = "2.5.7"
 icu4j = "78.1"
 slf4j = "2.0.17"
 
