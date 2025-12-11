@@ -724,7 +724,6 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                 verboseLog(TAG) { "onStop: calling cancel on synthesizeTextJob" }
                 job.cancel()
                 verboseLog(TAG) { "onStop: called cancel on synthesizeTextJob" }
-                synthesizeTextJob = null
             }
         }
     }
