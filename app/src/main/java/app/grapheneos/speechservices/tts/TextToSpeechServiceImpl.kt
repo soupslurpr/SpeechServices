@@ -731,8 +731,12 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        loadVoiceJob?.cancel()
+        loadVoiceInBackgroundJob?.cancel()
+        synthesizeTextJob?.cancel()
         encoder?.close()
         decoder?.close()
         englishPhonemizer?.close()
+        sonicAudioProcessor.reset()
     }
 }
