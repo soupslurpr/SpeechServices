@@ -259,7 +259,7 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                         "fallbackNetwork tokenizer loading time: ${SystemClock.elapsedRealtime() - fallbackNetworkTime}"
                     }
                     val fallbackNetwork =
-                        resources.openRawResourceFd(R.raw.smaller_and_only_encoder_four_layer_g2p)
+                        resources.openRawResourceFd(R.raw.en_us__g2p)
                             .use {
                                 FallbackNetwork(it, g2PTokenizer)
                             }
