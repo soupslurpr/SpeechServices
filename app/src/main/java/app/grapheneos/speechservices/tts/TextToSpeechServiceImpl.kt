@@ -168,7 +168,7 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
     private var englishPhonemizer: EnglishPhonemizer? = null
 
     private fun loadG2PTokenizerConfig(): G2PTokenizerConfig {
-        resources.openRawResource(R.raw.g2p_config).bufferedReader().use { bufferedReader ->
+        resources.openRawResource(R.raw.en_us__g2p__config).bufferedReader().use { bufferedReader ->
             val config = JSONObject(bufferedReader.readText())
             return G2PTokenizerConfig(
                 config.getString("grapheme_chars"),
