@@ -1,5 +1,6 @@
-app/src/main/java/app/grapheneos/speechservices/g2p/EnglishPhonemizer.kt is based on the GrapheneOS
-fork of Misaki (https://github.com/GrapheneOS/misaki), and app/src/main/res/raw/us_gold.json and
+app/src/main/java/app/grapheneos/speechservices/g2p/EnglishPhonemizer.kt and
+app/src/main/java/app/grapheneos/speechservices/g2p/MToken.kt are based on the GrapheneOS fork of
+Misaki (https://github.com/GrapheneOS/misaki), and app/src/main/res/raw/us_gold.json and
 app/src/main/res/raw/gb_gold.json are copied from it:
 
                                  Apache License
