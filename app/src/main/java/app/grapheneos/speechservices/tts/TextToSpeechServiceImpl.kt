@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
+import androidx.media3.common.util.UnstableApi
 import app.grapheneos.speechservices.R
 import app.grapheneos.speechservices.g2p.DictionaryValue
 import app.grapheneos.speechservices.g2p.EnglishPhonemizer
@@ -403,6 +404,7 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
         return emptyArray()
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
     override fun onSynthesizeText(request: SynthesisRequest?, callback: SynthesisCallback?) {
         verboseLog(TAG) {
             "onSynthesizeText parameters: charSequenceText: ${request?.charSequenceText}, " +
@@ -648,7 +650,7 @@ class TextToSpeechServiceImpl : TextToSpeechService() {
                                     )
                                     sonicAudioProcessor.setSpeed(request.speechRate / 100F)
                                     sonicAudioProcessor.setPitch(request.pitch / 100F)
-                                    sonicAudioProcessor.flush()
+                                    sonicAudioProcessor.flush(AudioProcessor.StreamMetadata.DEFAULT)
                                     // if it's inactive, it means no processing is needed
                                     if (sonicAudioProcessor.isActive) {
                                         val input =
